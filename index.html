@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GiiKER 密码机 - 音效增强版</title>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --panel-bg: #2b2b2b;
+            --cell-bg: #3d3d3d;
+            --text-main: #4CAF50;
+            --text-sub: #aaaaaa;
+            --text-warn: #ff9800;
+        }
+        body { font-family: 'PingFang SC', sans-serif; background: var(--bg-dark); color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; touch-action: manipulation; }
+        .container { background: var(--panel-bg); padding: 20px; border-radius: 25px; box-shadow: 0 20px 50px rgba(0,0,0,0.6); width: 95%; max-width: 400px; text-align: center; }
+        h2 { color: var(--text-main); font-size: 28px; margin: 0 0 10px 0; letter-spacing: 4px; }
+        .status-msg { color: var(--text-warn); font-weight: bold; margin-bottom: 15px; font-size: 16px; min-height: 24px; }
+        .tip-box { background: rgba(0,0,0,0.2); padding: 12px; border-radius: 12px; margin-bottom: 20px; font-size: 13px; color: var(--text-sub); }
+        .tip-item { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 2px 0; }
+        .indicator { width: 10px; height: 10px; border-radius: 50%; }
+        table { width: 100%; border-collapse: separate; border-spacing: 6px; margin-bottom: 15px; }
+        .peg { width: 40px; height: 40px; background: var(--cell-bg); border-radius: 50%; border: 2px solid #444; margin: 0 auto; transition: transform 0.2s; }
+        .active-peg { cursor: pointer; }
+        .active-peg:hover { transform: scale(1.05); border-color: #666; }
+        .feedback-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; width: 32px; height: 32px; margin: 0 auto; }
+        .small-dot { width: 12px; height: 12px; border-radius: 50%; background: #1a1a1a; border: 1px solid #333; }
+        .small-dot.green { background: #4CAF50; box-shadow: 0 0 8px #4CAF50; border: none; }
+        .small-dot.white { background: #ffffff; box-shadow: 0 0 8px #ffffff; border: none; }
+        .controls { display: flex; flex-direction: column; gap: 15px; }
+        .picker { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 5px; }
+        .color-btn { width: 42px; height: 42px; border-radius: 50%; border: none; cursor: pointer; transition: 0.2s; -webkit-tap-highlight-color: transparent; }
+        .color-btn.disabled { opacity: 0.15; cursor: not-allowed; filter: grayscale(1); }
+        .btn-group { display: flex; gap: 10px; }
+        .action-btn { flex: 1; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; font-size: 14px; }
+        .submit { background: var(--text-main); color: #1a1a1a; }
+        .submit:disabled { background: #444; color: #666; cursor: not-allowed; }
+        .reset { background: #444; color: #ccc; }
+        .红 { background: #ff4d4d; } .橙 { background: #ff9800; } .黄 { background: #ffeb3b; } 
+        .绿 { background: #4caf50; } .蓝 { background: #2196f3; } .靛 { background: #3f51b5; } .紫 { background: #9c27b0; }
+        #setupArea { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 id="title">GiiKER SETUP</h2>
+    <div id="statusMsg" class="status-msg">请出题人设定 4 位密码</div>
+    <div id="setupView"><div id="setupArea"><div class="peg" id="set-0" onclick="removeFromSetup(0)"></div><div class="peg" id="set-1" onclick="removeFromSetup(1)"></div><div class="peg" id="set-2" onclick="removeFromSetup(2)"></div><div class="peg" id="set-3" onclick="removeFromSetup(3)"></div></div></div>
+    <div id="gameView" style="display: none;"><div class="tip-box"><div class="tip-item"><div class="indicator 绿"></div> 绿色：位置颜色都对</div><div class="tip-item"><div class="indicator" style="background:#fff"></div> 白色：颜色对位置不对</div></div><table id="board"></table></div>
+    <div class="controls">
+        <div class="picker" id="colorPicker"></div>
+        <div class="btn-group">
+            <button id="mainBtn" class="action-btn submit" onclick="handleMainAction()" disabled>锁定密码</button>
+            <button class="action-btn reset" onclick="location.reload()">重新开始</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 音效引擎 (Web Audio API) ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+
+        switch(type) {
+            case 'select': // 选择颜色：清脆的短促音
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.1);
+                break;
+            case 'lock': // 锁定密码：机械确认音
+                osc.type = 'square'; osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(600, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+                break;
+            case 'submit': // 提交猜测：中音提示
+                osc.type = 'triangle'; osc.frequency.setValueAtTime(500, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.15);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.15);
+                break;
+            case 'win': // 胜利：上行和弦音
+                [440, 554, 659, 880].forEach((f, i) => {
+                    const o = audioCtx.createOscillator(); const g = audioCtx.createGain();
+                    o.type = 'sine'; o.frequency.value = f; o.connect(g); g.connect(audioCtx.destination);
+                    g.gain.setValueAtTime(0, audioCtx.currentTime + i*0.1); g.gain.linearRampToValueAtTime(0.1, audioCtx.currentTime + i*0.1 + 0.05);
+                    g.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.8);
+                    o.start(audioCtx.currentTime + i*0.1); o.stop(audioCtx.currentTime + 0.8);
+                });
+                break;
+            case 'fail': // 失败：下行低音
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.5);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime); gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+                osc.start(); osc.stop(audioCtx.currentTime + 0.5);
+                break;
+        }
+    }
+
+    // --- 游戏逻辑 ---
+    const allColors = ['红', '橙', '黄', '绿', '蓝', '靛', '紫'];
+    let secret = [], currentRow = 0, currentGuess = [], isSetupMode = true;
+
+    const picker = document.getElementById('colorPicker');
+    allColors.forEach(color => {
+        const btn = document.createElement('button'); btn.className = `color-btn ${color}`; btn.id = `p-${color}`;
+        btn.onclick = () => selectColor(color); picker.appendChild(btn);
+    });
+
+    const board = document.getElementById('board');
+    for (let i = 0; i < 7; i++) {
+        let tr = board.insertRow();
+        for (let j = 0; j < 4; j++) tr.insertCell().innerHTML = `<div class="peg" id="peg-${i}-${j}" onclick="removeGuessColor(${i}, ${j})"></div>`;
+        tr.insertCell().innerHTML = `<div class="feedback-grid" id="res-${i}"><div class="small-dot"></div><div class="small-dot"></div><div class="small-dot"></div><div class="small-dot"></div></div>`;
+    }
+
+    function selectColor(color) {
+        if (isSetupMode) {
+            if (secret.length < 4 && !secret.includes(color)) { secret.push(color); playSound('select'); updateSetupUI(); }
+        } else {
+            if (currentRow < 7 && currentGuess.length < 4 && !currentGuess.includes(color)) { currentGuess.push(color); playSound('select'); updateGuessUI(); }
+        }
+    }
+
+    function updateSetupUI() {
+        for (let i = 0; i < 4; i++) document.getElementById(`set-${i}`).className = 'peg' + (i < secret.length ? ` active-peg ${secret[i]}` : '');
+        allColors.forEach(c => document.getElementById(`p-${c}`).classList.toggle('disabled', secret.includes(c)));
+        document.getElementById('mainBtn').disabled = secret.length !== 4;
+    }
+
+    function removeFromSetup(idx) { if (isSetupMode && idx < secret.length) { secret.splice(idx, 1); playSound('select'); updateSetupUI(); } }
+
+    function updateGuessUI() {
+        for (let j = 0; j < 4; j++) document.getElementById(`peg-${currentRow}-${j}`).className = j < currentGuess.length ? `peg active-peg ${currentGuess[j]}` : 'peg';
+        allColors.forEach(c => document.getElementById(`p-${c}`).classList.toggle('disabled', currentGuess.includes(c)));
+        document.getElementById('mainBtn').disabled = currentGuess.length !== 4;
+    }
+
+    function removeGuessColor(row, col) { if (!isSetupMode && row === currentRow && col < currentGuess.length) { currentGuess.splice(col, 1); playSound('select'); updateGuessUI(); } }
+
+    function handleMainAction() {
+        if (isSetupMode) {
+            isSetupMode = false; playSound('lock');
+            document.getElementById('setupView').style.display = 'none'; document.getElementById('gameView').style.display = 'block';
+            document.getElementById('title').innerText = 'GiiKER SOLVE'; document.getElementById('statusMsg').innerText = '请解密人开始破译';
+            document.getElementById('mainBtn').innerText = '确认提交'; document.getElementById('mainBtn').disabled = true;
+            allColors.forEach(c => document.getElementById(`p-${c}`).classList.remove('disabled'));
+        } else {
+            playSound('submit'); checkGuess();
+        }
+    }
+
+    function checkGuess() {
+        let g = 0, w = 0;
+        currentGuess.forEach((c, i) => { if (c === secret[i]) g++; else if (secret.includes(c)) w++; });
+        const dots = document.getElementById(`res-${currentRow}`).querySelectorAll('.small-dot');
+        for(let i=0; i<g; i++) dots[i].className = 'small-dot green';
+        for(let i=0; i<w; i++) dots[g+i].className = 'small-dot white';
+
+        for (let j = 0; j < 4; j++) document.getElementById(`peg-${currentRow}-${j}`).classList.remove('active-peg');
+
+        if (g === 4) {
+            playSound('win'); document.getElementById('statusMsg').innerText = '🎊 破译成功！';
+            document.getElementById('mainBtn').disabled = true;
+            setTimeout(() => alert("破译成功！解密人获胜！"), 100);
+            return;
+        }
+
+        currentRow++;
+        if (currentRow >= 7) {
+            playSound('fail'); document.getElementById('statusMsg').innerText = '💀 机会用尽！';
+            setTimeout(() => alert("破译失败！出题人获胜！\n答案是：" + secret.join(' ')), 100);
+        }
+
+        currentGuess = [];
+        allColors.forEach(c => document.getElementById(`p-${c}`).classList.remove('disabled'));
+        document.getElementById('mainBtn').disabled = true;
+    }
+</script>
+</body>
+</html>
